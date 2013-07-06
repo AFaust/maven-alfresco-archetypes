@@ -1,0 +1,42 @@
+
+# /
+/.project
+/target
+/.classpath
+/.settings
+/alfresco-maven-amp-cleanup.patch
+/alfresco-maven-amp-component.patch
+/.idea
+/maven-alfresco-lifecycle.iml
+/plugins/maven-nosnapshot-plugin/maven-nosnapshot-plugin.iml
+/plugins/maven-amp-plugin/maven-amp-plugin.iml
+/maven-alfresco-archetypes/maven-alfresco-archetypes.iml
+/maven-alfresco-archetypes/maven-alfresco-amp-archetype/maven-alfresco-amp-archetype.iml
+/maven-alfresco-archetypes/maven-alfresco-share-archetype/maven-alfresco-share-archetype.iml
+/maven-alfresco-archetypes/maven-alfresco-share-module-archetype/maven-alfresco-share-module-archetype.iml
+/maven-alfresco-archetypes/maven-alfresco-extension-archetype/maven-alfresco-extension-archetype.iml
+
+# /archetypes/alfresco-allinone-archetype/
+/archetypes/alfresco-allinone-archetype/target
+/archetypes/alfresco-allinone-archetype/.settings
+/archetypes/alfresco-allinone-archetype/.classpath
+/archetypes/alfresco-allinone-archetype/.project
+
+# /archetypes/alfresco-amp-archetype/
+/archetypes/alfresco-amp-archetype/target
+/archetypes/alfresco-amp-archetype/.settings
+
+# /plugins/alfresco-maven-plugin/
+/plugins/alfresco-maven-plugin/.settings
+/plugins/alfresco-maven-plugin/target
+/plugins/alfresco-maven-plugin/.project
+/plugins/alfresco-maven-plugin/.classpath
+
+# /poms/
+/poms/.settings
+/poms/.project
+
+# /poms/alfresco-sdk-parent/
+/poms/alfresco-sdk-parent/.project
+/poms/alfresco-sdk-parent/.settings
+/poms/alfresco-sdk-parent/target
