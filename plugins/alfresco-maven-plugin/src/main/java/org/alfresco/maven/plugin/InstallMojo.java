@@ -201,7 +201,8 @@ public class InstallMojo extends AbstractMojo
             if ("amp".equals(artifact.getType()))
             {
                 final File artifactFile = artifact.getFile();
-                artifactKeyToAMPFile.put(ArtifactUtils.key(artifact), artifactFile);
+                artifactKeyToAMPFile.put(ArtifactUtils.key(artifact.getGroupId(), artifact.getArtifactId(), artifact.getBaseVersion()),
+                        artifactFile);
             }
         }
 
