@@ -2,15 +2,18 @@ package org.alfresco.maven.plugin;
 
 import java.io.File;
 import java.io.IOException;
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Iterator;
 import java.util.LinkedHashSet;
+import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.Stack;
+import java.util.Map.Entry;
 
 import org.alfresco.repo.module.tool.ModuleManagementTool;
 import org.apache.maven.RepositoryUtils;
@@ -176,7 +179,6 @@ public class InstallMojo extends AbstractMojo
         }
         else
         {
-            final DependencyNode node = this.collectAMPDependencies();
 
             // this needs to be ordered
             // for reasons unknown, the dependency graph will not contain a dependency of a module if that module has already been listed as
@@ -185,7 +187,44 @@ public class InstallMojo extends AbstractMojo
             final Set<String> rootAMPArtifactKeys = new LinkedHashSet<String>();
             final Map<String, Collection<String>> artifactKeyToArtifactDependencies = new HashMap<String, Collection<String>>();
 
-            this.buildArtifactDependencyRelations(node, rootAMPArtifactKeys, artifactKeyToArtifactDependencies);
+            final Set<String> directDependencyKeys = new HashSet<String>();
+            final List<Dependency> directDependencies = new ArrayList<Dependency>();
+            for (final Dependency dependency : this.project.getDependencies())
+            {
+                if (StringUtils.isEmpty(dependency.getGroupId()) || StringUtils.isEmpty(dependency.getArtifactId())
+                        || StringUtils.isEmpty(dependency.getVersion()))
+                {
+                    // guard against case where best-effort resolution for invalid models is requested
+                    continue;
+                }
+
+                if (!"amp".equals(dependency.getType())
+                        || !("runtime".equals(dependency.getScope()) || "provided".equals(dependency.getScope())))
+                {
+                    // only interested in runtime/provided-scope AMPs
+                    // Note: runtime/provided-scope chosen because it does not interfere with WAR packaging, i.e. unwanted overlay of JARs
+                    // from
+                    // AMPs in WEB-INF/lib
+                    continue;
+                }
+
+                directDependencies.add(dependency);
+                directDependencyKeys.add(ArtifactUtils.versionlessKey(dependency.getGroupId(), dependency.getArtifactId()));
+            }
+
+            for (final Dependency dependency : directDependencies)
+            {
+                final DependencyNode node = this.collectAMPDependencies(dependency, directDependencyKeys);
+                this.buildArtifactDependencyRelations(node, rootAMPArtifactKeys, artifactKeyToArtifactDependencies);
+            }
+
+            if (this.getLog().isDebugEnabled())
+            {
+                for (final Entry<String, Collection<String>> artifactDependencyEntry : artifactKeyToArtifactDependencies.entrySet())
+                {
+                    this.getLog().debug("Dependencies of " + artifactDependencyEntry.getKey() + ": " + artifactDependencyEntry.getValue());
+                }
+            }
 
             this.traverseDependenciesAndInstall(rootAMPArtifactKeys, artifactKeyToArtifactDependencies, mmt);
         }
@@ -201,8 +240,7 @@ public class InstallMojo extends AbstractMojo
             if ("amp".equals(artifact.getType()))
             {
                 final File artifactFile = artifact.getFile();
-                artifactKeyToAMPFile.put(ArtifactUtils.key(artifact.getGroupId(), artifact.getArtifactId(), artifact.getBaseVersion()),
-                        artifactFile);
+                artifactKeyToAMPFile.put(ArtifactUtils.versionlessKey(artifact.getGroupId(), artifact.getArtifactId()), artifactFile);
             }
         }
 
@@ -219,18 +257,19 @@ public class InstallMojo extends AbstractMojo
             {
                 // check remaining dependencies for current top-element
                 final String currentModule = dependencyStack.peek();
+                final String prefix = dependencyStack.size() == 1 ? "D" : "Transitive d";
                 final Collection<String> dependencies = artifactKeyToArtifactDependencies.get(currentModule);
 
-                if (dependencies == null || dependencies.isEmpty())
+                if (!installedModules.contains(currentModule))
                 {
-                    // no dependencies - we may install the current stack top-element
-                    this.getLog().debug("(Transitive) AMP dependency " + currentModule + " has no more unsatisfied dependencies");
-
-                    if (!installedModules.contains(currentModule))
+                    if (dependencies == null || dependencies.isEmpty())
                     {
+                        // no dependencies - we may install the current stack top-element
+                        this.getLog().debug(prefix + "ependency " + currentModule + " has no more unsatisfied dependencies");
+
                         if (rootAMPArtifactKeys.contains(currentModule))
                         {
-                            this.getLog().debug("Installing (transitive) AMP dependency " + currentModule);
+                            this.getLog().debug("Installing " + currentModule);
 
                             final File artifactFile = artifactKeyToAMPFile.get(currentModule);
                             mmt.installModule(artifactFile.getAbsolutePath(), this.warLocation.getAbsolutePath(), false, // preview
@@ -239,31 +278,32 @@ public class InstallMojo extends AbstractMojo
                         else
                         {
                             this.getLog().debug(
-                                    "(Transitive) AMP dependency " + currentModule
+                                    prefix + "ependency " + currentModule
                                             + " will not be installed since it has not been declared as a direct dependency");
                         }
                         installedModules.add(currentModule);
+
+                        // completed this (transitive) dependency of root AMP
+                        dependencyStack.pop();
                     }
                     else
                     {
-                        this.getLog().debug("(Transitive) AMP dependency " + currentModule + " has already been handled");
-                    }
+                        final String firstUnresolvedDependency = dependencies.iterator().next();
+                        dependencies.remove(firstUnresolvedDependency);
 
-                    // completed this (transitive) dependency of root AMP
-                    dependencyStack.pop();
+                        if (!installedModules.contains(firstUnresolvedDependency))
+                        {
+                            this.getLog().debug(
+                                    prefix + "ependency " + currentModule + " requires handling of its dependency "
+                                            + firstUnresolvedDependency + " before it may be installed");
+                            dependencyStack.push(firstUnresolvedDependency);
+                        }
+                    }
                 }
                 else
                 {
-                    final String firstUnresolvedDependency = dependencies.iterator().next();
-                    dependencies.remove(firstUnresolvedDependency);
-
-                    if (!installedModules.contains(firstUnresolvedDependency))
-                    {
-                        this.getLog().debug(
-                                "(Transitive) AMP dependency " + currentModule + " requires handling of its dependency "
-                                        + firstUnresolvedDependency + " before it may be installed");
-                        dependencyStack.push(firstUnresolvedDependency);
-                    }
+                    dependencyStack.pop();
+                    this.getLog().debug(prefix + "ependency " + currentModule + " has already been handled");
                 }
             }
         }
@@ -284,7 +324,7 @@ public class InstallMojo extends AbstractMojo
                 if (dependency != null)
                 {
                     final Artifact artifact = dependency.getArtifact();
-                    final String artifactKey = ArtifactUtils.key(artifact.getGroupId(), artifact.getArtifactId(), artifact.getVersion());
+                    final String artifactKey = ArtifactUtils.versionlessKey(artifact.getGroupId(), artifact.getArtifactId());
                     isAmpDependency = "amp".equals(artifact.getExtension());
 
                     final String dependingArtifactKey = artifactStack.isEmpty() ? null : artifactStack.peek();
@@ -326,7 +366,8 @@ public class InstallMojo extends AbstractMojo
         });
     }
 
-    private DependencyNode collectAMPDependencies() throws MojoFailureException
+    private DependencyNode collectAMPDependencies(final Dependency dependency, final Set<String> directDependencies)
+            throws MojoFailureException
     {
         final ArtifactTypeRegistry stereotypes = this.session.getRepositorySession().getArtifactTypeRegistry();
 
@@ -334,39 +375,22 @@ public class InstallMojo extends AbstractMojo
         collect.setRequestContext("alfresco-maven-plugin:install");
         collect.setRepositories(this.project.getRemoteProjectRepositories());
 
-        for (final Dependency dependency : this.project.getDependencies())
-        {
-            if (StringUtils.isEmpty(dependency.getGroupId()) || StringUtils.isEmpty(dependency.getArtifactId())
-                    || StringUtils.isEmpty(dependency.getVersion()))
-            {
-                // guard against case where best-effort resolution for invalid models is requested
-                continue;
-            }
-
-            if (!"amp".equals(dependency.getType()) || !"runtime".equals(dependency.getScope()))
-            {
-                // only interested in runtime-scope AMPs
-                // Note: runtime-scope chosen because it does not interfere with WAR packaging, i.e. unwanted overlay of JARs from AMPs
-                // in WEB-INF/lib
-                continue;
-            }
-
-            collect.addDependency(RepositoryUtils.toDependency(dependency, stereotypes));
-        }
+        collect.addDependency(RepositoryUtils.toDependency(dependency, stereotypes));
 
         final DependencyManagement dependencyManagement = this.project.getDependencyManagement();
         if (dependencyManagement != null)
         {
-            for (final Dependency dependency : dependencyManagement.getDependencies())
+            for (final Dependency managedDependency : dependencyManagement.getDependencies())
             {
-                collect.addManagedDependency(RepositoryUtils.toDependency(dependency, stereotypes));
+                collect.addManagedDependency(RepositoryUtils.toDependency(managedDependency, stereotypes));
             }
         }
 
         DependencyNode node;
         try
         {
-            node = this.repoSystem.collectDependencies(new AMPLookupSession(this.session.getRepositorySession()), collect).getRoot();
+            node = this.repoSystem.collectDependencies(new AMPLookupSession(this.session.getRepositorySession(), directDependencies),
+                    collect).getRoot();
         }
         catch (final DependencyCollectionException ex)
         {
@@ -405,9 +429,12 @@ public class InstallMojo extends AbstractMojo
     private static class AMPLookupSession extends FilterRepositorySystemSession
     {
 
-        protected AMPLookupSession(final RepositorySystemSession session)
+        protected final Set<String> directDependencies;
+
+        protected AMPLookupSession(final RepositorySystemSession session, final Set<String> directDependencies)
         {
             super(session);
+            this.directDependencies = directDependencies;
         }
 
         /**
@@ -450,8 +477,10 @@ public class InstallMojo extends AbstractMojo
                 @Override
                 public boolean traverseDependency(final org.sonatype.aether.graph.Dependency dependency)
                 {
-                    // traverse to dependencies of AMPs only
-                    final boolean isAmp = "amp".equals(dependency.getArtifact().getExtension());
+                    // traverse to dependencies of AMPs or direct dependencies only
+                    final Artifact artifact = dependency.getArtifact();
+                    final String key = ArtifactUtils.versionlessKey(artifact.getGroupId(), artifact.getArtifactId());
+                    final boolean isAmp = "amp".equals(artifact.getExtension()) || AMPLookupSession.this.directDependencies.contains(key);
                     return isAmp;
                 }
 
