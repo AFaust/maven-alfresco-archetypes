@@ -14,7 +14,6 @@ import java.util.Map;
 import java.util.Set;
 import java.util.Stack;
 import java.util.Map.Entry;
-
 import org.alfresco.repo.module.tool.ModuleManagementTool;
 import org.apache.maven.RepositoryUtils;
 import org.apache.maven.artifact.ArtifactUtils;
